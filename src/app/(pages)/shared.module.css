@@ -1,0 +1,487 @@
+/* Shared styles for static pages */
+
+.page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-page);
+}
+
+/* Navigation - Soft Pastel */
+.nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(250, 248, 245, 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.navContent {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.backButton {
+    padding: 6px 12px;
+    font-family: var(--font-family);
+    font-size: 14px;
+    color: var(--color-accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity var(--duration-fast) var(--ease-apple);
+}
+
+.backButton:hover {
+    opacity: 0.7;
+}
+
+.pageTitle {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+/* Main Content */
+.main {
+    flex: 1;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 48px 24px;
+    width: 100%;
+}
+
+.hero {
+    text-align: center;
+    margin-bottom: 48px;
+}
+
+.title {
+    font-size: 40px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 16px;
+}
+
+.subtitle {
+    font-size: 18px;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+}
+
+/* Sections */
+.section {
+    margin-bottom: 48px;
+}
+
+.sectionTitle {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    letter-spacing: -0.01em;
+}
+
+.sectionText {
+    font-size: 16px;
+    color: var(--color-text-secondary);
+    line-height: 1.7;
+    margin-bottom: 16px;
+}
+
+/* Cards Grid */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.card {
+    padding: 28px;
+    background: var(--color-bg-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+}
+
+.cardIcon {
+    font-size: 32px;
+    margin-bottom: 12px;
+}
+
+.cardTitle {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.cardText {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+}
+
+/* Pricing */
+.pricingGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    margin-top: 32px;
+}
+
+.pricingCard {
+    padding: 36px;
+    background: var(--color-bg-surface);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+}
+
+.pricingCard.featured {
+    background: var(--color-accent);
+    color: white;
+}
+
+.planName {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.price {
+    font-size: 48px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.priceUnit {
+    font-size: 16px;
+    font-weight: 400;
+}
+
+.planDesc {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-bottom: 24px;
+}
+
+.pricingCard.featured .planDesc {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.featureList {
+    list-style: none;
+    text-align: left;
+    margin-bottom: 24px;
+}
+
+.featureList li {
+    padding: 8px 0;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.featureList li::before {
+    content: '✓';
+    color: var(--color-success);
+}
+
+.pricingCard.featured .featureList li::before {
+    color: white;
+}
+
+.ctaButton {
+    width: 100%;
+    padding: 14px 24px;
+    font-family: var(--font-family);
+    font-size: 15px;
+    font-weight: 500;
+    background: var(--color-accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-apple);
+}
+
+.ctaButton:hover {
+    background: var(--color-accent-hover);
+}
+
+.pricingCard.featured .ctaButton {
+    background: white;
+    color: var(--color-accent);
+}
+
+/* FAQ */
+.faqList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.faqItem {
+    background: var(--color-bg-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border-light);
+    overflow: hidden;
+}
+
+.faqQuestion {
+    width: 100%;
+    padding: 20px 24px;
+    font-family: var(--font-family);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.faqQuestion:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.faqChevron {
+    transition: transform var(--duration-fast) var(--ease-apple);
+}
+
+.faqChevron.open {
+    transform: rotate(180deg);
+}
+
+.faqAnswer {
+    padding: 0 24px 20px;
+    font-size: 15px;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+}
+
+/* Contact */
+.contactGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    margin-top: 32px;
+}
+
+@media (max-width: 768px) {
+    .contactGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.formGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+.input,
+.textarea {
+    padding: 12px 16px;
+    font-family: var(--font-family);
+    font-size: 15px;
+    color: var(--color-text-primary);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: all var(--duration-fast) var(--ease-apple);
+}
+
+.input:focus,
+.textarea:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+}
+
+.textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.submitBtn {
+    padding: 14px 24px;
+    font-family: var(--font-family);
+    font-size: 15px;
+    font-weight: 500;
+    background: var(--color-accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-apple);
+}
+
+.submitBtn:hover {
+    background: var(--color-accent-hover);
+}
+
+.contactInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.contactCard {
+    padding: 28px;
+    background: var(--color-bg-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border-light);
+    box-shadow: var(--shadowsm);
+}
+
+.contactCard h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.contactCard p {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+}
+
+/* Legal Pages */
+.legal {
+    font-size: 15px;
+    color: var(--color-text-secondary);
+    line-height: 1.8;
+}
+
+.legal h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 32px 0 16px;
+}
+
+.legal h2:first-child {
+    margin-top: 0;
+}
+
+.legal p {
+    margin-bottom: 16px;
+}
+
+.legal ul {
+    margin: 16px 0;
+    padding-left: 24px;
+}
+
+.legal li {
+    margin-bottom: 8px;
+}
+
+/* Footer - Warm Pastel */
+.footer {
+    background: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border-light);
+    padding: 56px 24px;
+    margin-top: auto;
+}
+
+.footerContent {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 48px;
+}
+
+@media (max-width: 768px) {
+    .footerContent {
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+    }
+}
+
+.footerBrand h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.footerBrand p {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+}
+
+.footerSection h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--color-text-primary);
+}
+
+.footerLinks {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.footerLinks a {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    transition: color var(--duration-fast) var(--ease-apple);
+}
+
+.footerLinks a:hover {
+    color: var(--color-accent);
+}
+
+.footerBottom {
+    max-width: 1200px;
+    margin: 32px auto 0;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-border-subtle);
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-text-tertiary);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .title {
+        font-size: 32px;
+    }
+
+    .subtitle {
+        font-size: 16px;
+    }
+
+    .main {
+        padding: 32px 16px;
+    }
+}

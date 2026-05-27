@@ -1,0 +1,31 @@
+# Serverless Environment Configuration
+# Copy to .env.local for development, or set in Vercel dashboard for production
+
+# MongoDB Configuration
+MONGODB_URI=mongodb://localhost:27017/pdf-tools
+
+# Storage Configuration
+# On Vercel, only /tmp is writable (512MB limit, ephemeral)
+JOB_STORAGE_PATH=/tmp/pdf-jobs
+
+# Job TTL in milliseconds (default: 1 hour = 3600000)
+# Files will be auto-deleted after this time
+JOB_MAX_AGE_MS=3600000
+
+# Rate Limiting
+# Requests per minute per IP (default: 60)
+RATE_LIMIT_RPM=60
+
+# Daily Operation Limits
+DAILY_LIMIT_ANONYMOUS=3
+DAILY_LIMIT_FREE=10
+DAILY_LIMIT_PRO=999999
+
+# Processing Timeouts (in milliseconds)
+# Vercel hobby: 10s, Pro: 60s max
+PROCESSING_TIMEOUT_MS=55000
+UPLOAD_TIMEOUT_MS=25000
+
+# Node Environment
+NODE_ENV=development
+

@@ -1,0 +1,246 @@
+/* Login Page Styles */
+
+.page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-page);
+}
+
+.nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+@media (prefers-color-scheme: dark) {
+    .nav {
+        background: rgba(44, 44, 46, 0.8);
+    }
+}
+
+.navContent {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.backButton {
+    padding: 6px 12px;
+    font-size: 14px;
+    color: var(--color-accent);
+    text-decoration: none;
+}
+
+.pageTitle {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    gap: 32px;
+}
+
+/* Login Card */
+.loginCard {
+    width: 100%;
+    max-width: 400px;
+    padding: 32px;
+    background: var(--color-bg-surface);
+    border-radius: var(--radius-xl);
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.title {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    font-size: 15px;
+    color: var(--color-text-secondary);
+}
+
+/* Social Buttons */
+.socialButtons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.googleBtn,
+.appleBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 24px;
+    font-family: var(--font-family);
+    font-size: 15px;
+    font-weight: 500;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-apple);
+}
+
+.googleBtn {
+    background: white;
+    color: #1f1f1f;
+    border: 1px solid var(--color-border-subtle);
+}
+
+.googleBtn:hover {
+    background: #f5f5f5;
+}
+
+.appleBtn {
+    background: #000;
+    color: white;
+}
+
+.appleBtn:hover {
+    background: #333;
+}
+
+.googleBtn:disabled,
+.appleBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Divider */
+.divider {
+    display: flex;
+    align-items: center;
+    margin: 24px 0;
+}
+
+.divider::before,
+.divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-border-subtle);
+}
+
+.divider span {
+    padding: 0 16px;
+    font-size: 13px;
+    color: var(--color-text-tertiary);
+}
+
+/* Form */
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.formGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.label {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.input {
+    padding: 12px 16px;
+    font-family: var(--font-family);
+    font-size: 15px;
+    color: var(--color-text-primary);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: all var(--duration-fast) var(--ease-apple);
+}
+
+.input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+}
+
+.submitBtn {
+    margin-top: 8px;
+    padding: 14px 24px;
+    font-family: var(--font-family);
+    font-size: 15px;
+    font-weight: 500;
+    color: white;
+    background: var(--color-accent);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-apple);
+}
+
+.submitBtn:hover {
+    background: var(--color-accent-hover);
+}
+
+.submitBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Disclaimer */
+.disclaimer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-text-tertiary);
+}
+
+.disclaimer a {
+    color: var(--color-accent);
+    text-decoration: none;
+}
+
+/* Benefits */
+.benefits {
+    text-align: center;
+}
+
+.benefits h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+}
+
+.benefits ul {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+}
+
+.benefits li {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+}
