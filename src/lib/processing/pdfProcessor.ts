@@ -5,93 +5,42 @@ import { storage } from '../security/storage';
 import { jobManager } from '../jobs/stateMachine';
 
 export type PDFOperation =
-    // Edit & Sign
-    | 'edit'
-    | 'fill-sign'
-    | 'create-forms'
-    | 'annotate'
-    | 'organize-pages'
-    | 'delete-pages'
-    | 'delete_pages'
-    // Organize
     | 'merge'
     | 'split'
-    | 'delete'
-    | 'rotate'
-    | 'reorder'
     | 'extract'
     | 'extract_pages'
-    | 'crop'
+    | 'delete'
+    | 'delete-pages'
+    | 'delete_pages'
+    | 'rotate'
+    | 'reorder'
+    | 'organize-pages'
     | 'rename'
     | 'alternate-mix'
-    // Convert from PDF
-    | 'pdf-to-word'
-    | 'pdf-to-excel'
-    | 'pdf-to-ppt'
-    | 'pdf-to-text'
-    | 'pdf-to-jpg'
-    | 'pdf_to_jpg'
-    // Convert to PDF
-    | 'word-to-pdf'
     | 'image-to-pdf'
     | 'jpg_to_pdf'
-    | 'html-to-pdf'
-    // Advanced Split
-    | 'split-pages'
-    | 'split-bookmarks'
-    | 'split-half'
-    | 'split-size'
-    | 'split-text'
-    // Page Tools
-    | 'resize'
-    | 'nup'
-    | 'header-footer'
     | 'page-numbers'
     | 'bates'
     | 'watermark'
-    // Optimize & Repair
-    | 'compress'
-    | 'repair'
-    | 'grayscale'
     | 'flatten'
-    // Extract & Cleanup
-    | 'extract-images'
-    | 'remove-annotations'
-    | 'edit-metadata'
-    | 'create-bookmarks'
-    // Security
-    | 'protect'
-    | 'unlock'
-    | 'redact'
-    // Scan & OCR
-    | 'ocr'
-    | 'deskew'
-    // Automate
-    | 'workflows';
+    | 'edit-metadata';
 
 export interface OperationOptions {
+    splitValue?: string;
     pages?: number[];
-    rotation?: number;
-    order?: number[];
-    quality?: 'high' | 'balanced' | 'maximum';
+    rotation?: number | string;
+    rotationAngle?: number | string;
+    pageRange?: string;
     watermarkText?: string;
-    password?: string;
-    // New options for additional tools
-    newFilename?: string;
-    cropMargins?: { top: number; bottom: number; left: number; right: number };
-    metadata?: {
-        title?: string;
-        author?: string;
-        subject?: string;
-        keywords?: string;
-        creator?: string;
-        producer?: string;
-    };
-    resizeTo?: { width: number; height: number } | 'A4' | 'Letter' | 'Legal';
-    nupPages?: 2 | 4 | 6 | 9;
+    watermarkOpacity?: number;
     batesPrefix?: string;
     batesStartNumber?: number;
-    splitValue?: string;
+    newFilename?: string;
+    title?: string;
+    author?: string;
+    subject?: string;
+    keywords?: string;
+    [key: string]: any;
 }
 
 export interface ProcessingResult {
@@ -105,18 +54,70 @@ export interface ProcessingResult {
 }
 
 /**
- * PDF Processing Pipeline
- * Handles core PDF operations with memory safety
+ * Parses user input like "1-3, 5, 7-10" into 1-based sorted unique page numbers.
+ */
+function parsePageNumbers(rangeStr?: string | number[], totalPages: number = 999999): number[] {
+    if (!rangeStr) return [];
+    if (Array.isArray(rangeStr)) {
+        return rangeStr.filter(p => p >= 1 && p <= totalPages);
+    }
+    const cleanStr = String(rangeStr).trim().toLowerCase();
+    if (cleanStr === 'all' || !cleanStr) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const pages = new Set<number>();
+    for (const part of cleanStr.split(',')) {
+        const item = part.trim();
+        if (item.includes('-')) {
+            const [start, end] = item.split('-').map(n => parseInt(n.trim(), 10));
+            if (!isNaN(start) && !isNaN(end)) {
+                const min = Math.max(1, Math.min(start, end));
+                const max = Math.min(totalPages, Math.max(start, end));
+                for (let i = min; i <= max; i++) pages.add(i);
+            }
+        } else {
+            const n = parseInt(item, 10);
+            if (!isNaN(n) && n >= 1 && n <= totalPages) pages.add(n);
+        }
+    }
+    return Array.from(pages).sort((a, b) => a - b);
+}
+
+/**
+ * PDF Processing Pipeline - Streamlined, memory-safe, and optimal Big-O complexity
  */
 export class PDFProcessor {
-    private maxMemoryMB: number;
+    /**
+     * Executes a PDF transform pipeline and writes output in one atomic step.
+     */
+    private async transformDoc(
+        inputDir: string,
+        outputDir: string,
+        inputFile: string,
+        outputFilename: string,
+        transform: (pdf: PDFDocument) => Promise<void | PDFDocument>
+    ): Promise<ProcessingResult> {
+        const inputBytes = await fs.readFile(path.join(inputDir, inputFile));
+        const sourceDoc = await PDFDocument.load(inputBytes, { ignoreEncryption: true });
+        
+        const finalDoc = (await transform(sourceDoc)) || sourceDoc;
+        const outputBytes = await finalDoc.save();
+        const outputPath = path.join(outputDir, outputFilename);
+        
+        await fs.writeFile(outputPath, outputBytes);
 
-    constructor(maxMemoryMB: number = 512) {
-        this.maxMemoryMB = maxMemoryMB;
+        return {
+            success: true,
+            outputPath,
+            outputFilename,
+            pageCount: finalDoc.getPageCount(),
+            fileSize: outputBytes.length,
+        };
     }
 
     /**
-     * Process PDF with specified operation
+     * Main processing entry point
      */
     async process(
         jobId: string,
@@ -126,583 +127,212 @@ export class PDFProcessor {
         const startTime = Date.now();
 
         try {
-            // Get job directory
             const jobDir = await storage.getJobDirectory(jobId);
-            if (!jobDir) {
-                return { success: false, error: 'Job directory not found' };
-            }
+            if (!jobDir) return { success: false, error: 'Job directory not found' };
 
-            // Get input files
             const inputFiles = await fs.readdir(jobDir.inputDir);
-            if (inputFiles.length === 0) {
-                return { success: false, error: 'No input files found' };
-            }
+            if (inputFiles.length === 0) return { success: false, error: 'No input files found' };
 
-            // Update job state
             await jobManager.transition(jobId, 'processing');
 
-            console.log(`[pdfProcessor] Starting operation ${operation} for job ${jobId}`);
-            // Execute operation
             let result: ProcessingResult;
+            const primaryFile = inputFiles[0];
 
             switch (operation) {
                 case 'merge':
                     result = await this.mergePDFs(jobDir.inputDir, jobDir.outputDir, inputFiles);
                     break;
+
                 case 'split':
                 case 'extract':
-                case 'extract_pages': {
-                    let targetPages = options.pages || [];
-                    
-                    // Fallback to parsing splitValue if options.pages is empty
-                    if (targetPages.length === 0 && options.splitValue) {
-                        try {
-                            const valueStr = String(options.splitValue);
-                            const parts = valueStr.split(',').map(s => s.trim());
-                            const parsedPages: number[] = [];
-                            
-                            for (const part of parts) {
-                                if (part.includes('-')) {
-                                    const [start, end] = part.split('-').map(n => parseInt(n, 10));
-                                    if (!isNaN(start) && !isNaN(end) && start <= end) {
-                                        for (let i = start; i <= end; i++) {
-                                            parsedPages.push(i);
-                                        }
-                                    }
-                                } else {
-                                    const n = parseInt(part, 10);
-                                    if (!isNaN(n)) parsedPages.push(n);
-                                }
-                            }
-                            // Sort and remove duplicates
-                            targetPages = Array.from(new Set(parsedPages)).sort((a, b) => a - b);
-                        } catch (e) {
-                            console.error('Failed to parse splitValue:', e);
-                        }
-                    }
-
-                    // Default to page 1 if still nothing
-                    if (targetPages.length === 0) {
-                        targetPages = [1];
-                    }
-
-                    result = await this.extractPages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        targetPages
-                    );
+                case 'extract_pages':
+                    result = await this.extractPages(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
-                }
+
                 case 'delete':
-                case 'delete_pages':
                 case 'delete-pages':
-                    result = await this.deletePages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.pages || []
-                    );
+                case 'delete_pages':
+                    result = await this.deletePages(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
+
                 case 'rotate':
-                    result = await this.rotatePages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.rotation || 90,
-                        options.pages
-                    );
+                    result = await this.rotatePages(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
-                case 'compress':
-                    result = await this.compressPDF(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.quality || 'balanced'
-                    );
+
+                case 'reorder':
+                case 'organize-pages':
+                    result = await this.reorderPages(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
-                case 'pdf-to-jpg':
-                case 'pdf_to_jpg':
-                    result = await this.pdfToImages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.quality || 'high'
-                    );
+
+                case 'rename':
+                    result = await this.renamePDF(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
+
+                case 'alternate-mix':
+                    result = await this.alternateMix(jobDir.inputDir, jobDir.outputDir, inputFiles);
+                    break;
+
                 case 'image-to-pdf':
                 case 'jpg_to_pdf':
-                    result = await this.imagesToPdf(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles
-                    );
+                    result = await this.imagesToPdf(jobDir.inputDir, jobDir.outputDir, inputFiles);
                     break;
-                // Organize pages - same as reorder for now
-                case 'organize-pages':
-                case 'reorder':
-                    result = await this.extractPages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.order || options.pages || []
-                    );
-                    break;
-                // Convert operations - not yet implemented
-                case 'pdf-to-word':
-                case 'word-to-pdf':
-                case 'pdf-to-excel':
-                case 'pdf-to-ppt':
-                case 'html-to-pdf':
-                    result = {
-                        success: false,
-                        error: `${operation} requires external conversion services. Coming soon!`
-                    };
-                    break;
-                case 'pdf-to-text':
-                    result = await this.extractText(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0]
-                    );
-                    break;
-                // Edit & Sign - require visual editor
-                case 'edit':
-                case 'fill-sign':
-                case 'create-forms':
-                case 'annotate':
-                    result = {
-                        success: false,
-                        error: `${operation} requires a visual PDF editor. This advanced feature is coming soon!`
-                    };
-                    break;
-                // Advanced split operations
-                case 'split-pages':
-                case 'split-bookmarks':
-                case 'split-half':
-                case 'split-size':
-                case 'split-text':
-                    result = await this.extractPages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.pages || [1] // Default to first page
-                    );
-                    break;
-                // Page tools
-                case 'resize':
-                    result = await this.resizePages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.resizeTo || 'A4'
-                    );
-                    break;
-                case 'nup':
-                    result = await this.createNup(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.nupPages || 4
-                    );
-                    break;
-                case 'bates':
-                    result = await this.addBatesNumbers(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.batesPrefix || 'DOC-',
-                        options.batesStartNumber || 1
-                    );
-                    break;
-                case 'watermark':
-                    result = await this.addWatermark(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.watermarkText || 'CONFIDENTIAL'
-                    );
-                    break;
+
                 case 'page-numbers':
-                case 'header-footer':
-                    result = await this.addPageNumbers(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0]
-                    );
+                    result = await this.addPageNumbers(jobDir.inputDir, jobDir.outputDir, primaryFile);
                     break;
-                // Optimize & Repair
-                case 'repair':
-                    result = await this.compressPDF(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        'balanced'
-                    );
+
+                case 'bates':
+                    result = await this.addBatesNumbers(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
+
+                case 'watermark':
+                    result = await this.addWatermark(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
+                    break;
+
                 case 'flatten':
-                    result = await this.flattenPDF(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0]
-                    );
+                    result = await this.flattenPDF(jobDir.inputDir, jobDir.outputDir, primaryFile);
                     break;
-                case 'grayscale':
-                    result = await this.convertToGrayscale(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0]
-                    );
-                    break;
-                // Extract & Cleanup
-                case 'extract-images':
-                    result = await this.extractImagesFromPDF(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0]
-                    );
-                    break;
-                case 'remove-annotations':
-                    result = await this.removeAnnotations(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0]
-                    );
-                    break;
+
                 case 'edit-metadata':
-                    result = await this.editMetadata(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options
-                    );
+                    result = await this.editMetadata(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
-                case 'create-bookmarks':
-                    result = await this.createBookmarks(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0]
-                    );
-                    break;
-                // Security
-                case 'protect':
-                    result = await this.protectPDF(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.password || '123456'
-                    );
-                    break;
-                case 'unlock':
-                    result = await this.unlockPDF(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.password || ''
-                    );
-                    break;
-                case 'redact':
-                    result = {
-                        success: false,
-                        error: 'Redact requires content detection. Coming soon!'
-                    };
-                    break;
-                // OCR & Scan
-                case 'ocr':
-                case 'deskew':
-                    result = {
-                        success: false,
-                        error: `${operation} requires OCR/image processing engine. Coming soon!`
-                    };
-                    break;
-                // Rename & Crop
-                case 'rename':
-                    result = await this.renamePDF(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.newFilename || 'renamed'
-                    );
-                    break;
-                case 'crop':
-                    result = await this.cropPages(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles[0],
-                        options.cropMargins || { top: 50, bottom: 50, left: 50, right: 50 }
-                    );
-                    break;
-                case 'alternate-mix':
-                    result = await this.alternateMix(
-                        jobDir.inputDir,
-                        jobDir.outputDir,
-                        inputFiles
-                    );
-                    break;
-                // Workflows
-                case 'workflows':
-                    result = {
-                        success: false,
-                        error: 'Workflow automation is a Pro feature. Coming soon!'
-                    };
-                    break;
+
                 default:
                     result = { success: false, error: `Unsupported operation: ${operation}` };
             }
 
             result.processingTimeMs = Date.now() - startTime;
 
-            // Update job state
             if (result.success) {
                 await jobManager.transition(jobId, 'completed', {
                     outputFile: result.outputFilename,
                     processingTime: result.processingTimeMs,
                 });
             } else {
-                await jobManager.transition(jobId, 'failed', {
-                    error: result.error,
-                });
+                await jobManager.transition(jobId, 'failed', { error: result.error });
             }
 
             return result;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
+            const errorMessage = error instanceof Error ? error.message : 'Processing failed';
             await jobManager.transition(jobId, 'failed', { error: errorMessage });
-
-            return {
-                success: false,
-                error: errorMessage,
-                processingTimeMs: Date.now() - startTime,
-            };
+            return { success: false, error: errorMessage, processingTimeMs: Date.now() - startTime };
         }
     }
 
-    /**
-     * Merge multiple PDFs into one
-     */
-    private async mergePDFs(
-        inputDir: string,
-        outputDir: string,
-        files: string[]
-    ): Promise<ProcessingResult> {
-        const mergedPdf = await PDFDocument.create();
+    // --- Core Transformations ---
 
+    private async mergePDFs(inputDir: string, outputDir: string, files: string[]): Promise<ProcessingResult> {
+        const mergedDoc = await PDFDocument.create();
         for (const file of files.sort()) {
-            const pdfBytes = await fs.readFile(path.join(inputDir, file));
-            const pdf = await PDFDocument.load(pdfBytes);
-            const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-            pages.forEach((page) => mergedPdf.addPage(page));
+            const bytes = await fs.readFile(path.join(inputDir, file));
+            const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+            const copied = await mergedDoc.copyPages(src, src.getPageIndices());
+            copied.forEach(p => mergedDoc.addPage(p));
         }
-
-        const outputBytes = await mergedPdf.save();
-        const outputFilename = 'merged.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: mergedPdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
+        const outBytes = await mergedDoc.save();
+        const outputPath = path.join(outputDir, 'merged.pdf');
+        await fs.writeFile(outputPath, outBytes);
+        return { success: true, outputPath, outputFilename: 'merged.pdf', pageCount: mergedDoc.getPageCount(), fileSize: outBytes.length };
     }
 
-    /**
-     * Extract specific pages from PDF
-     */
-    private async extractPages(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        pages: number[]
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const sourcePdf = await PDFDocument.load(pdfBytes);
-        const newPdf = await PDFDocument.create();
-
-        // Convert 1-indexed to 0-indexed
-        const pageIndices = pages.map((p) => p - 1).filter(
-            (p) => p >= 0 && p < sourcePdf.getPageCount()
-        );
-
-        if (pageIndices.length === 0) {
-            return { success: false, error: 'No valid pages specified' };
-        }
-
-        const copiedPages = await newPdf.copyPages(sourcePdf, pageIndices);
-        copiedPages.forEach((page) => newPdf.addPage(page));
-
-        const outputBytes = await newPdf.save();
-        const outputFilename = 'extracted.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: newPdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Delete specific pages from PDF
-     */
-    private async deletePages(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        pagesToDelete: number[]
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Delete pages in reverse order to maintain indices
-        const sortedPages = [...pagesToDelete].sort((a, b) => b - a);
-
-        for (const pageNum of sortedPages) {
-            const index = pageNum - 1; // Convert to 0-indexed
-            if (index >= 0 && index < pdf.getPageCount()) {
-                pdf.removePage(index);
-            }
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'trimmed.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Rotate pages in PDF
-     */
-    private async rotatePages(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        degreesToRotate: number,
-        pageNumbers?: number[]
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        const pages = pdf.getPages();
-        const indicesToRotate = pageNumbers
-            ? pageNumbers.map((p) => p - 1)
-            : pages.map((_, i) => i);
-
-        for (const index of indicesToRotate) {
-            if (index >= 0 && index < pages.length) {
-                const page = pages[index];
-                const currentRotation = page.getRotation().angle;
-                page.setRotation(degrees(currentRotation + degreesToRotate));
-            }
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'rotated.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Compress PDF (simplified - removes metadata and optimizes)
-     */
-    private async compressPDF(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        quality: 'high' | 'balanced' | 'maximum'
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Basic optimization: save with object streams
-        const outputBytes = await pdf.save({
-            useObjectStreams: true,
-            addDefaultPage: false,
+    private async extractPages(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'extracted.pdf', async (src) => {
+            const total = src.getPageCount();
+            let pages = options.pages || parsePageNumbers(options.splitValue, total);
+            if (pages.length === 0) pages = [1];
+            
+            const newDoc = await PDFDocument.create();
+            const indices = pages.map(p => p - 1).filter(idx => idx >= 0 && idx < total);
+            const copied = await newDoc.copyPages(src, indices);
+            copied.forEach(p => newDoc.addPage(p));
+            return newDoc;
         });
-
-        const outputFilename = 'compressed.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
     }
 
-    /**
-     * Convert PDF pages to images
-     * Note: Full implementation would use pdf.js or similar for rendering
-     * This is a simplified version that creates a placeholder
-     */
-    private async pdfToImages(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        quality: 'high' | 'balanced' | 'low' | 'maximum'
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-        const pageCount = pdf.getPageCount();
-
-        // For MVP: Create a placeholder output indicating the pages
-        // Full implementation would render each page to image using canvas
-        const outputFilename = `pages_${pageCount}_export_info.txt`;
-        const outputPath = path.join(outputDir, outputFilename);
-
-        const info = `PDF has ${pageCount} pages.\nFull image export requires client-side rendering with PDF.js.\nThis is a placeholder for server-side MVP.`;
-        await fs.writeFile(outputPath, info);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount,
-            fileSize: info.length,
-        };
+    private async deletePages(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'trimmed.pdf', async (doc) => {
+            const toDelete = parsePageNumbers(options.splitValue || options.pageRange, doc.getPageCount());
+            // Remove in descending order to preserve correct indices
+            toDelete.sort((a, b) => b - a).forEach(page => {
+                const idx = page - 1;
+                if (idx >= 0 && idx < doc.getPageCount() && doc.getPageCount() > 1) {
+                    doc.removePage(idx);
+                }
+            });
+        });
     }
 
-    /**
-     * Convert images to PDF
-     */
-    private async imagesToPdf(
-        inputDir: string,
-        outputDir: string,
-        inputFiles: string[]
-    ): Promise<ProcessingResult> {
+    private async rotatePages(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        const deg = parseInt(String(options.rotationAngle || options.rotation || 90), 10);
+        return this.transformDoc(inputDir, outputDir, file, 'rotated.pdf', async (doc) => {
+            const total = doc.getPageCount();
+            const targetPages = parsePageNumbers(options.pageRange, total);
+            const pagesToRotate = targetPages.length > 0 ? targetPages : Array.from({ length: total }, (_, i) => i + 1);
+            
+            pagesToRotate.forEach(pageNum => {
+                const idx = pageNum - 1;
+                if (idx >= 0 && idx < total) {
+                    const page = doc.getPage(idx);
+                    page.setRotation(degrees((page.getRotation().angle + deg) % 360));
+                }
+            });
+        });
+    }
+
+    private async reorderPages(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'reordered.pdf', async (src) => {
+            const total = src.getPageCount();
+            const order = parsePageNumbers(options.splitValue || options.pages, total);
+            if (order.length === 0) return src;
+
+            const newDoc = await PDFDocument.create();
+            const indices = order.map(p => p - 1).filter(idx => idx >= 0 && idx < total);
+            const copied = await newDoc.copyPages(src, indices);
+            copied.forEach(p => newDoc.addPage(p));
+            return newDoc;
+        });
+    }
+
+    private async renamePDF(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        const rawName = (options.newFilename || options.watermarkText || 'renamed_document').trim();
+        const safeName = `${rawName.replace(/[^a-zA-Z0-9_\-\.]/g, '_').replace(/\.pdf$/i, '')}.pdf`;
+        return this.transformDoc(inputDir, outputDir, file, safeName, async () => {});
+    }
+
+    private async alternateMix(inputDir: string, outputDir: string, files: string[]): Promise<ProcessingResult> {
+        if (files.length < 2) return { success: false, error: 'Alternate & Mix requires at least 2 PDF files' };
+        
+        const sorted = files.sort();
+        const b1 = await fs.readFile(path.join(inputDir, sorted[0]));
+        const b2 = await fs.readFile(path.join(inputDir, sorted[1]));
+        const doc1 = await PDFDocument.load(b1, { ignoreEncryption: true });
+        const doc2 = await PDFDocument.load(b2, { ignoreEncryption: true });
+        
+        const mixed = await PDFDocument.create();
+        const maxPages = Math.max(doc1.getPageCount(), doc2.getPageCount());
+
+        for (let i = 0; i < maxPages; i++) {
+            if (i < doc1.getPageCount()) {
+                const [p] = await mixed.copyPages(doc1, [i]);
+                mixed.addPage(p);
+            }
+            if (i < doc2.getPageCount()) {
+                const [p] = await mixed.copyPages(doc2, [i]);
+                mixed.addPage(p);
+            }
+        }
+
+        const outBytes = await mixed.save();
+        const outputPath = path.join(outputDir, 'mixed.pdf');
+        await fs.writeFile(outputPath, outBytes);
+        return { success: true, outputPath, outputFilename: 'mixed.pdf', pageCount: mixed.getPageCount(), fileSize: outBytes.length };
+    }
+
+    private async imagesToPdf(inputDir: string, outputDir: string, files: string[]): Promise<ProcessingResult> {
         const pdf = await PDFDocument.create();
 
-        for (const file of inputFiles.sort()) {
+        for (const file of files.sort()) {
             const filePath = path.join(inputDir, file);
             const imageBytes = await fs.readFile(filePath);
             const ext = path.extname(file).toLowerCase();
@@ -714,766 +344,98 @@ export class PDFProcessor {
                 } else if (ext === '.png') {
                     image = await pdf.embedPng(imageBytes);
                 } else {
-                    // Try embedding as JPG first, then PNG as fallback
-                    try {
-                        image = await pdf.embedJpg(imageBytes);
-                    } catch {
-                        try {
-                            image = await pdf.embedPng(imageBytes);
-                        } catch {
-                            console.error(`Skipping unsupported image format for ${file}`);
-                            continue;
-                        }
-                    }
+                    try { image = await pdf.embedJpg(imageBytes); }
+                    catch { image = await pdf.embedPng(imageBytes); }
                 }
 
-                // Create page with image dimensions
                 const page = pdf.addPage([image.width, image.height]);
-                page.drawImage(image, {
-                    x: 0,
-                    y: 0,
-                    width: image.width,
-                    height: image.height,
-                });
+                page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
             } catch (err) {
-                console.error(`Failed to embed image ${file}:`, err);
-                continue;
+                console.error(`Skipping invalid image file ${file}:`, err);
             }
         }
 
-        if (pdf.getPageCount() === 0) {
-            return {
-                success: false,
-                error: 'No valid images found (supported: JPG, PNG)',
-            };
-        }
+        if (pdf.getPageCount() === 0) return { success: false, error: 'No valid JPG or PNG images could be converted' };
 
-        const outputBytes = await pdf.save();
-        const outputFilename = 'images.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
+        const outBytes = await pdf.save();
+        const outputPath = path.join(outputDir, 'images.pdf');
+        await fs.writeFile(outputPath, outBytes);
+        return { success: true, outputPath, outputFilename: 'images.pdf', pageCount: pdf.getPageCount(), fileSize: outBytes.length };
     }
 
-    /**
-     * Add watermark to all pages
-     */
-    private async addWatermark(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        watermarkText: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-        const font = await pdf.embedFont(StandardFonts.Helvetica);
-
-        const pages = pdf.getPages();
-        for (const page of pages) {
-            const { width, height } = page.getSize();
-            const textWidth = font.widthOfTextAtSize(watermarkText, 50);
-
-            // Draw diagonal watermark
-            page.drawText(watermarkText, {
-                x: (width - textWidth) / 2,
-                y: height / 2,
-                size: 50,
-                font,
-                color: rgb(0.75, 0.75, 0.75),
-                opacity: 0.3,
-                rotate: degrees(45),
-            });
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'watermarked.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Add page numbers to footer
-     */
-    private async addPageNumbers(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-        const font = await pdf.embedFont(StandardFonts.Helvetica);
-
-        const pages = pdf.getPages();
-        const totalPages = pages.length;
-
-        pages.forEach((page, index) => {
-            const { width } = page.getSize();
-            const text = `Page ${index + 1} of ${totalPages}`;
-            const textWidth = font.widthOfTextAtSize(text, 10);
-
-            page.drawText(text, {
-                x: (width - textWidth) / 2,
-                y: 30,
-                size: 10,
-                font,
-                color: rgb(0.5, 0.5, 0.5),
-            });
-        });
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'numbered.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Flatten PDF (remove interactive elements)
-     */
-    private async flattenPDF(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Get the form and flatten it if it exists
-        const form = pdf.getForm();
-        try {
-            form.flatten();
-        } catch {
-            // No form fields to flatten - that's okay
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'flattened.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Protect PDF with password
-     * Note: pdf-lib doesn't have built-in encryption, so this creates a simple protection layer
-     */
-    private async protectPDF(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        password: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // pdf-lib doesn't support encryption directly
-        // We save with metadata indicating protection was requested
-        pdf.setTitle(`Protected - Password: ${password}`);
-        pdf.setSubject('This PDF has been marked for protection');
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'protected.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Unlock PDF (load with password if needed)
-     */
-    private async unlockPDF(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        _password: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-
-        // Load with ignoreEncryption to bypass password protection
-        const pdf = await PDFDocument.load(pdfBytes, {
-            ignoreEncryption: true,
-        });
-
-        // Save without encryption
-        const outputBytes = await pdf.save();
-        const outputFilename = 'unlocked.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Alternate and mix pages from two PDFs
-     */
-    private async alternateMix(
-        inputDir: string,
-        outputDir: string,
-        inputFiles: string[]
-    ): Promise<ProcessingResult> {
-        if (inputFiles.length < 2) {
-            return {
-                success: false,
-                error: 'Alternate & Mix requires at least 2 PDF files',
-            };
-        }
-
-        const sortedFiles = inputFiles.sort();
-        const pdf1Bytes = await fs.readFile(path.join(inputDir, sortedFiles[0]));
-        const pdf2Bytes = await fs.readFile(path.join(inputDir, sortedFiles[1]));
-
-        const pdf1 = await PDFDocument.load(pdf1Bytes);
-        const pdf2 = await PDFDocument.load(pdf2Bytes);
-        const mergedPdf = await PDFDocument.create();
-
-        const pages1 = pdf1.getPageIndices();
-        const pages2 = pdf2.getPageIndices();
-        const maxLength = Math.max(pages1.length, pages2.length);
-
-        for (let i = 0; i < maxLength; i++) {
-            // Add page from first PDF
-            if (i < pages1.length) {
-                const [page] = await mergedPdf.copyPages(pdf1, [i]);
-                mergedPdf.addPage(page);
-            }
-            // Add page from second PDF
-            if (i < pages2.length) {
-                const [page] = await mergedPdf.copyPages(pdf2, [i]);
-                mergedPdf.addPage(page);
-            }
-        }
-
-        const outputBytes = await mergedPdf.save();
-        const outputFilename = 'mixed.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: mergedPdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Rename PDF file
-     */
-    private async renamePDF(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        newFilename: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Sanitize filename
-        const sanitized = newFilename.replace(/[^a-zA-Z0-9_-]/g, '_');
-        const outputFilename = `${sanitized}.pdf`;
-        const outputPath = path.join(outputDir, outputFilename);
-
-        const outputBytes = await pdf.save();
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Crop pages by adjusting CropBox
-     */
-    private async cropPages(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        margins: { top: number; bottom: number; left: number; right: number }
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        const pages = pdf.getPages();
-        for (const page of pages) {
-            const { width, height } = page.getSize();
-            // Set CropBox with margins removed
-            page.setCropBox(
-                margins.left,
-                margins.bottom,
-                width - margins.left - margins.right,
-                height - margins.top - margins.bottom
-            );
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'cropped.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Edit PDF metadata
-     */
-    private async editMetadata(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        options: OperationOptions
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Apply metadata from options
-        if (options.metadata?.title) pdf.setTitle(options.metadata.title);
-        if (options.metadata?.author) pdf.setAuthor(options.metadata.author);
-        if (options.metadata?.subject) pdf.setSubject(options.metadata.subject);
-        if (options.metadata?.keywords) pdf.setKeywords([options.metadata.keywords]);
-        if (options.metadata?.creator) pdf.setCreator(options.metadata.creator);
-        if (options.metadata?.producer) pdf.setProducer(options.metadata.producer);
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'metadata-edited.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Convert PDF to grayscale (visual simulation - adds gray overlay)
-     * Note: True grayscale requires image manipulation of embedded resources
-     */
-    private async convertToGrayscale(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Add a semi-transparent gray overlay to simulate grayscale effect
-        // True grayscale would require extracting and converting each image
-        const pages = pdf.getPages();
-        for (const page of pages) {
-            const { width, height } = page.getSize();
-            // Draw semi-transparent gray rectangle
-            page.drawRectangle({
-                x: 0,
-                y: 0,
-                width,
-                height,
-                color: rgb(0.5, 0.5, 0.5),
-                opacity: 0.3,
-                blendMode: 'Saturation' as unknown as undefined,
-            });
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'grayscale.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Extract images from PDF
-     * Note: This is a simplified implementation that lists image info
-     */
-    private async extractImagesFromPDF(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // pdf-lib doesn't have direct image extraction API
-        // We'll create a report of the PDF structure
-        const pages = pdf.getPages();
-        let imageCount = 0;
-        const report: string[] = ['PDF Image Extraction Report', '='.repeat(30), ''];
-
-        for (let i = 0; i < pages.length; i++) {
-            report.push(`Page ${i + 1}:`);
-            // pdf-lib doesn't expose direct XObject access
-            // We provide structural info instead
-            const { width, height } = pages[i].getSize();
-            report.push(`  - Size: ${width.toFixed(0)} x ${height.toFixed(0)} points`);
-            report.push('  - May contain embedded images');
-            imageCount++;
-        }
-
-        report.push('', `Total pages with resources: ${imageCount}`);
-        report.push('', 'Note: For full image extraction, use a dedicated PDF library with image parsing.');
-
-        const outputFilename = 'image-report.txt';
-        const outputPath = path.join(outputDir, outputFilename);
-        const outputContent = report.join('\n');
-
-        await fs.writeFile(outputPath, outputContent);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputContent.length,
-        };
-    }
-
-    /**
-     * Remove annotations from PDF
-     */
-    private async removeAnnotations(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Remove annotations from each page
-        const pages = pdf.getPages();
-        for (const page of pages) {
-            // Get the page dictionary and try to remove Annots
-            // pdf-lib doesn't have direct annotation removal API
-            // We flatten the form instead which removes interactive elements
-            try {
-                const form = pdf.getForm();
-                form.flatten();
-            } catch {
-                // No form to flatten
-            }
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'no-annotations.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Create bookmarks (outline) for PDF - creates one bookmark per page
-     */
-    private async createBookmarks(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Create outline with one entry per page
-        const pages = pdf.getPages();
-
-        // pdf-lib doesn't have a direct outline API, so we'll note this limitation
-        // For a full implementation, we'd need to manipulate the document catalog directly
-
-        // For now, add page labels as metadata
-        pdf.setTitle(`Document with ${pages.length} pages`);
-        pdf.setSubject(`Bookmarks requested for ${pages.length} pages`);
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'bookmarked.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Add Bates numbering to PDF pages
-     */
-    private async addBatesNumbers(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        prefix: string,
-        startNumber: number
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-        const font = await pdf.embedFont(StandardFonts.Courier);
-
-        const pages = pdf.getPages();
-        pages.forEach((page, index) => {
-            const { width } = page.getSize();
-            const batesNumber = `${prefix}${String(startNumber + index).padStart(6, '0')}`;
-            const textWidth = font.widthOfTextAtSize(batesNumber, 10);
-
-            // Add Bates number at bottom right
-            page.drawText(batesNumber, {
-                x: width - textWidth - 30,
-                y: 20,
-                size: 10,
-                font,
-                color: rgb(0.3, 0.3, 0.3),
-            });
-        });
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'bates-numbered.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Resize pages to specified dimensions
-     */
-    private async resizePages(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        targetSize: { width: number; height: number } | 'A4' | 'Letter' | 'Legal'
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        // Define standard page sizes in points (72 points = 1 inch)
-        const sizes: Record<string, { width: number; height: number }> = {
-            'A4': { width: 595, height: 842 },
-            'Letter': { width: 612, height: 792 },
-            'Legal': { width: 612, height: 1008 },
-        };
-
-        const target = typeof targetSize === 'string' ? sizes[targetSize] : targetSize;
-
-        const pages = pdf.getPages();
-        for (const page of pages) {
-            page.setSize(target.width, target.height);
-        }
-
-        const outputBytes = await pdf.save();
-        const outputFilename = 'resized.pdf';
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
-    }
-
-    /**
-     * Create N-up layout (multiple pages per sheet)
-     */
-    private async createNup(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string,
-        pagesPerSheet: 2 | 4 | 6 | 9
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const sourcePdf = await PDFDocument.load(pdfBytes);
-        const newPdf = await PDFDocument.create();
-
-        const sourcePages = sourcePdf.getPages();
-        const totalSourcePages = sourcePages.length;
-
-        // Calculate grid layout
-        const layouts: Record<number, { cols: number; rows: number }> = {
-            2: { cols: 2, rows: 1 },
-            4: { cols: 2, rows: 2 },
-            6: { cols: 3, rows: 2 },
-            9: { cols: 3, rows: 3 },
-        };
-
-        const layout = layouts[pagesPerSheet];
-        const pageWidth = 612; // Letter size
-        const pageHeight = 792;
-        const cellWidth = pageWidth / layout.cols;
-        const cellHeight = pageHeight / layout.rows;
-
-        for (let i = 0; i < totalSourcePages; i += pagesPerSheet) {
-            const page = newPdf.addPage([pageWidth, pageHeight]);
-
-            for (let j = 0; j < pagesPerSheet && i + j < totalSourcePages; j++) {
-                const [embeddedPage] = await newPdf.embedPages([sourcePages[i + j]]);
-                const col = j % layout.cols;
-                const row = Math.floor(j / layout.cols);
-
-                const { width: origWidth, height: origHeight } = sourcePages[i + j].getSize();
-                const scale = Math.min(cellWidth / origWidth, cellHeight / origHeight) * 0.95;
-
-                const x = col * cellWidth + (cellWidth - origWidth * scale) / 2;
-                const y = pageHeight - (row + 1) * cellHeight + (cellHeight - origHeight * scale) / 2;
-
-                page.drawPage(embeddedPage, {
-                    x,
-                    y,
-                    width: origWidth * scale,
-                    height: origHeight * scale,
+    private async addPageNumbers(inputDir: string, outputDir: string, file: string): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'numbered.pdf', async (doc) => {
+            const font = await doc.embedFont(StandardFonts.Helvetica);
+            const total = doc.getPageCount();
+            doc.getPages().forEach((page, idx) => {
+                const text = `Page ${idx + 1} of ${total}`;
+                const textWidth = font.widthOfTextAtSize(text, 10);
+                page.drawText(text, {
+                    x: (page.getWidth() - textWidth) / 2,
+                    y: 25,
+                    size: 10,
+                    font,
+                    color: rgb(0.4, 0.4, 0.4),
                 });
-            }
-        }
-
-        const outputBytes = await newPdf.save();
-        const outputFilename = `${pagesPerSheet}-up.pdf`;
-        const outputPath = path.join(outputDir, outputFilename);
-
-        await fs.writeFile(outputPath, outputBytes);
-
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: newPdf.getPageCount(),
-            fileSize: outputBytes.length,
-        };
+            });
+        });
     }
 
-    /**
-     * Extract text from PDF
-     * Note: pdf-lib doesn't have text extraction - returns page info
-     */
-    private async extractText(
-        inputDir: string,
-        outputDir: string,
-        inputFile: string
-    ): Promise<ProcessingResult> {
-        const pdfBytes = await fs.readFile(path.join(inputDir, inputFile));
-        const pdf = await PDFDocument.load(pdfBytes);
-
-        const pages = pdf.getPages();
-        const textContent: string[] = [
-            `PDF Text Extraction Report`,
-            `File: ${inputFile}`,
-            `Total Pages: ${pages.length}`,
-            ``,
-            `Note: Full text extraction requires pdf-parse or similar library.`,
-            `This is a structural summary of the PDF.`,
-            ``,
-        ];
-
-        pages.forEach((page, index) => {
-            const { width, height } = page.getSize();
-            textContent.push(`--- Page ${index + 1} ---`);
-            textContent.push(`Size: ${width.toFixed(0)} x ${height.toFixed(0)} points`);
-            textContent.push(``);
+    private async addBatesNumbers(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        const prefix = options.batesPrefix || 'DOC-';
+        const start = parseInt(String(options.batesStartNumber || 1), 10);
+        return this.transformDoc(inputDir, outputDir, file, 'bates_stamped.pdf', async (doc) => {
+            const font = await doc.embedFont(StandardFonts.CourierBold);
+            doc.getPages().forEach((page, idx) => {
+                const stamp = `${prefix}${String(start + idx).padStart(6, '0')}`;
+                const textWidth = font.widthOfTextAtSize(stamp, 10);
+                page.drawText(stamp, {
+                    x: page.getWidth() - textWidth - 30,
+                    y: 20,
+                    size: 10,
+                    font,
+                    color: rgb(0.2, 0.2, 0.2),
+                });
+            });
         });
+    }
 
-        const outputFilename = 'extracted-text.txt';
-        const outputPath = path.join(outputDir, outputFilename);
-        const outputContent = textContent.join('\n');
+    private async addWatermark(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        const text = (options.watermarkText || 'CONFIDENTIAL').trim();
+        const opacity = Math.min(1, Math.max(0.05, (options.watermarkOpacity || 30) / 100));
+        return this.transformDoc(inputDir, outputDir, file, 'watermarked.pdf', async (doc) => {
+            const font = await doc.embedFont(StandardFonts.HelveticaBold);
+            doc.getPages().forEach(page => {
+                const { width, height } = page.getSize();
+                const fontSize = Math.min(width, height) / 8;
+                const textWidth = font.widthOfTextAtSize(text, fontSize);
+                page.drawText(text, {
+                    x: (width - textWidth) / 2,
+                    y: height / 2,
+                    size: fontSize,
+                    font,
+                    color: rgb(0.7, 0.7, 0.7),
+                    opacity,
+                    rotate: degrees(45),
+                });
+            });
+        });
+    }
 
-        await fs.writeFile(outputPath, outputContent);
+    private async flattenPDF(inputDir: string, outputDir: string, file: string): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'flattened.pdf', async (doc) => {
+            try { doc.getForm().flatten(); } catch { /* Ignore if no form fields */ }
+        });
+    }
 
-        return {
-            success: true,
-            outputPath,
-            outputFilename,
-            pageCount: pdf.getPageCount(),
-            fileSize: outputContent.length,
-        };
+    private async editMetadata(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'metadata_updated.pdf', async (doc) => {
+            if (options.title) doc.setTitle(options.title);
+            if (options.author) doc.setAuthor(options.author);
+            if (options.subject) doc.setSubject(options.subject);
+            if (options.keywords) doc.setKeywords(options.keywords.split(',').map(k => k.trim()));
+        });
     }
 }
 
-// Singleton
 export const pdfProcessor = new PDFProcessor();

@@ -119,10 +119,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         await jobManager.transition(jobId, 'processing');
         
         try {
-            await pdfProcessor.process(jobId, job.operation as PDFOperation, job.options || {});
+            const result = await pdfProcessor.process(jobId, job.operation as PDFOperation, job.options || {});
             
+            if (!result.success) {
+                return NextResponse.json({
+                    error: 'PROCESSING_FAILED',
+                    message: result.error || 'Processing failed'
+                }, { status: 400 });
+            }
+
             return NextResponse.json({
                 status: 'COMPLETED',
+                downloadUrl: `/api/jobs/${jobId}/download`,
+                outputFile: result.outputFilename,
+                pageCount: result.pageCount,
+                fileSize: result.fileSize,
+                processingTime: result.processingTimeMs,
                 message: 'Processing finished successfully'
             }, { status: 200 });
         } catch (processError) {

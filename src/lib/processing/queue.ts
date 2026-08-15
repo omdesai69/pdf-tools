@@ -38,8 +38,8 @@ class JobQueue {
      * Determine priority based on file size and operation
      */
     private determinePriority(fileSize: number, operation: PDFOperation): QueuePriority {
-        // CPU-intensive operations get low priority
-        const lowPriorityOps: PDFOperation[] = ['compress'];
+        // Multi-file operations get low priority
+        const lowPriorityOps: PDFOperation[] = ['merge', 'alternate-mix', 'image-to-pdf'];
         if (lowPriorityOps.includes(operation)) {
             return 'low';
         }

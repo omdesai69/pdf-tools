@@ -163,13 +163,36 @@ export default function ToolPage() {
                 method: 'POST',
             });
 
+            const processData = await processRes.json();
+
             if (!processRes.ok) {
-                const processData = await processRes.json();
                 throw new Error(processData.message || 'Failed to start processing');
             }
+
+            // If processing completed immediately (synchronous serverless execution)
+            if (processData.status === 'COMPLETED') {
+                setProgress(100);
+                setProcessingStep('finalizing');
+
+                filesToProcess.forEach(file => {
+                    addRecentFile({
+                        name: file.name,
+                        size: file.size,
+                        toolId,
+                        toolName: tool?.name || toolId,
+                        jobId: newJobId,
+                    });
+                });
+
+                setTimeout(() => {
+                    if (mounted.current) setStage('complete');
+                }, 200);
+                return;
+            }
+
             setProgress(40);
 
-            // Step 4: Poll for completion
+            // Step 4: Poll for completion (fallback for async/background jobs)
             let isPolling = true;
             let timeoutId: NodeJS.Timeout;
             
@@ -185,7 +208,7 @@ export default function ToolPage() {
                         cache: 'no-store',
                     });
                     
-                    if (!mounted.current || !isPolling) return; // Prevent updating unmounted component
+                    if (!mounted.current || !isPolling) return;
                     
                     const status = await statusRes.json();
 
@@ -195,7 +218,6 @@ export default function ToolPage() {
                         setProcessingStep('finalizing');
                         setProgress(100);
 
-                        // Track file in history
                         filesToProcess.forEach(file => {
                             addRecentFile({
                                 name: file.name,
@@ -208,7 +230,7 @@ export default function ToolPage() {
 
                         setTimeout(() => {
                             if (mounted.current) setStage('complete');
-                        }, 400);
+                        }, 200);
                         return;
                     } else if (status.state === 'failed') {
                         isPolling = false;
