@@ -11,6 +11,7 @@ import {
     validateFileType,
     formatFileSize
 } from '@/lib/storage';
+import { VisualPageGrid } from '@/components/VisualPageGrid';
 import styles from './page.module.css';
 
 type Stage = 'upload' | 'settings' | 'processing' | 'complete' | 'error';
@@ -33,6 +34,28 @@ export default function ToolPage() {
     const [processingStep, setProcessingStep] = useState<string>('');
     const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
     const [dragOverItemIndex, setDragOverItemIndex] = useState<number | null>(null);
+    const [visualState, setVisualState] = useState<{
+        pageOrder?: number[];
+        rotations?: Record<number, number>;
+        selectedPages?: number[];
+        deletedPages?: number[];
+    }>({});
+
+    const handleVisualGridChange = useCallback((state: {
+        pageOrder: number[];
+        rotations: Record<number, number>;
+        selectedPages: number[];
+        deletedPages: number[];
+    }) => {
+        setVisualState(state);
+        if (toolId === 'split' || toolId === 'extract') {
+            setSettings(prev => ({ ...prev, splitValue: state.selectedPages.join(', ') }));
+        } else if (toolId === 'delete') {
+            setSettings(prev => ({ ...prev, splitValue: state.deletedPages.join(', ') }));
+        } else if (toolId === 'reorder') {
+            setSettings(prev => ({ ...prev, splitValue: state.pageOrder.join(', ') }));
+        }
+    }, [toolId]);
 
     // Handle unmounting safely for polling loops
     const mounted = useRef(true);
@@ -113,8 +136,8 @@ export default function ToolPage() {
         // Brief delay to show acceptance, then proceed
         setTimeout(() => {
             setFileAccepted(false);
-            // If tool has settings or multiple files are uploaded (for reordering), show settings panel
-            if ((toolConfig.hasSettings && toolConfig.settingsFields) || newFiles.length > 1) {
+            // If tool has settings, multiple files, or is a PDF, show visual settings stage
+            if (toolConfig.hasSettings || newFiles.length > 1 || (newFiles.length === 1 && newFiles[0].type === 'application/pdf')) {
                 setStage('settings');
             } else {
                 // Otherwise proceed to processing
@@ -135,7 +158,10 @@ export default function ToolPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     operation: toolId,
-                    settings
+                    settings: {
+                        ...settings,
+                        ...visualState,
+                    }
                 }),
             });
 
@@ -534,6 +560,15 @@ export default function ToolPage() {
                                     </div>
                                 ))}
                             </div>
+                        )}
+
+                        {/* Interactive Visual Page Studio for PDF documents */}
+                        {files.length === 1 && (files[0].type === 'application/pdf' || files[0].name.toLowerCase().endsWith('.pdf')) && (
+                            <VisualPageGrid 
+                                file={files[0]} 
+                                toolId={toolId} 
+                                onChange={handleVisualGridChange} 
+                            />
                         )}
 
                         <div className={styles.settingsActions}>

@@ -264,9 +264,22 @@ export class PDFProcessor {
     }
 
     private async rotatePages(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
-        const deg = parseInt(String(options.rotationAngle || options.rotation || 90), 10);
+        const defaultDeg = parseInt(String(options.rotationAngle || options.rotation || 90), 10);
         return this.transformDoc(inputDir, outputDir, file, 'rotated.pdf', async (doc) => {
             const total = doc.getPageCount();
+            
+            if (options.rotations && typeof options.rotations === 'object' && Object.keys(options.rotations).length > 0) {
+                for (let i = 0; i < total; i++) {
+                    const pageNum = i + 1;
+                    const angle = Number(options.rotations[pageNum]);
+                    if (!isNaN(angle) && angle !== 0) {
+                        const page = doc.getPage(i);
+                        page.setRotation(degrees((page.getRotation().angle + angle) % 360));
+                    }
+                }
+                return;
+            }
+
             const targetPages = parsePageNumbers(options.pageRange, total);
             const pagesToRotate = targetPages.length > 0 ? targetPages : Array.from({ length: total }, (_, i) => i + 1);
             
@@ -274,7 +287,7 @@ export class PDFProcessor {
                 const idx = pageNum - 1;
                 if (idx >= 0 && idx < total) {
                     const page = doc.getPage(idx);
-                    page.setRotation(degrees((page.getRotation().angle + deg) % 360));
+                    page.setRotation(degrees((page.getRotation().angle + defaultDeg) % 360));
                 }
             });
         });
