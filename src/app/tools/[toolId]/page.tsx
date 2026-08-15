@@ -13,6 +13,7 @@ import {
 } from '@/lib/storage';
 import { VisualPageGrid } from '@/components/VisualPageGrid';
 import { SignOverlay } from '@/components/SignOverlay';
+import { clientPdfProcessor } from '@/lib/processing/clientPdfProcessor';
 import styles from './page.module.css';
 
 type Stage = 'upload' | 'settings' | 'processing' | 'complete' | 'error';
@@ -41,6 +42,8 @@ export default function ToolPage() {
         selectedPages?: number[];
         deletedPages?: number[];
     }>({});
+    const [localDownloadUrl, setLocalDownloadUrl] = useState<string | null>(null);
+    const [isClientProcessed, setIsClientProcessed] = useState<boolean>(false);
 
     const handleVisualGridChange = useCallback((state: {
         pageOrder: number[];
@@ -163,6 +166,42 @@ export default function ToolPage() {
 
     const processFiles = async (filesToProcess: File[]) => {
         setStage('processing');
+        setProgress(25);
+        setProcessingStep('processing');
+
+        // Step 0: Fast In-Browser Execution (0ms server latency, 100% private)
+        try {
+            const clientResult = await clientPdfProcessor.process(toolId, filesToProcess, {
+                ...settings,
+                ...visualState,
+            });
+
+            if (clientResult.success && clientResult.downloadUrl) {
+                setLocalDownloadUrl(clientResult.downloadUrl);
+                setIsClientProcessed(true);
+                setProgress(100);
+                setProcessingStep('finalizing');
+
+                filesToProcess.forEach(file => {
+                    addRecentFile({
+                        name: clientResult.outputFilename || file.name,
+                        size: clientResult.fileSize || file.size,
+                        toolId,
+                        toolName: tool?.name || toolId,
+                        jobId: 'local-session',
+                    });
+                });
+
+                setTimeout(() => {
+                    if (mounted.current) setStage('complete');
+                }, 200);
+                return;
+            }
+        } catch (clientErr) {
+            console.warn('In-browser processing fallback to server:', clientErr);
+        }
+
+        // Serverless API Fallback
         setProgress(0);
         setProcessingStep('preparing');
 
@@ -328,6 +367,8 @@ export default function ToolPage() {
         setFiles([]);
         setError(null);
         setJobId(null);
+        setLocalDownloadUrl(null);
+        setIsClientProcessed(false);
         setProgress(0);
     };
 
@@ -670,8 +711,8 @@ export default function ToolPage() {
                         <p className={styles.completeText}>Done!</p>
                         <div className={styles.actions}>
                             <a
-                                href={`/api/jobs/${jobId}/download`}
-                                download
+                                href={localDownloadUrl || `/api/jobs/${jobId}/download`}
+                                download={toolId === 'image-to-pdf' ? 'images.pdf' : `${toolId}_result.pdf`}
                                 className={styles.downloadBtn}
                             >
                                 Download
@@ -680,9 +721,16 @@ export default function ToolPage() {
                                 Process another
                             </button>
                         </div>
-                        <p className={styles.downloadNotice}>
-                            Your file will be automatically deleted shortly after download
-                        </p>
+                        {isClientProcessed ? (
+                            <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', fontWeight: 500 }}>
+                                <span>🔒</span>
+                                <span>100% Private — Processed locally in your browser (0 data uploaded)</span>
+                            </p>
+                        ) : (
+                            <p className={styles.downloadNotice}>
+                                Your file will be automatically deleted shortly after download
+                            </p>
+                        )}
                     </div>
                 )}
 

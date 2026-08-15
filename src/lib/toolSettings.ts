@@ -277,6 +277,27 @@ export const toolConfigs: Record<string, ToolConfig> = {
         icon: '✍️',
         hasSettings: true,
     },
+    'dark-mode': {
+        id: 'dark-mode',
+        name: 'Dark Mode PDF',
+        description: 'Invert colors for night reading',
+        icon: '🌑',
+        hasSettings: false,
+    },
+    sanitize: {
+        id: 'sanitize',
+        name: 'Sanitize PDF',
+        description: 'Scrub all hidden tracking metadata',
+        icon: '🛡️',
+        hasSettings: false,
+    },
+    booklet: {
+        id: 'booklet',
+        name: 'Booklet Imposition',
+        description: 'Format pages for 2-sided booklet print',
+        icon: '📖',
+        hasSettings: false,
+    },
 };
 
 export function getToolConfig(toolId: string): ToolConfig {

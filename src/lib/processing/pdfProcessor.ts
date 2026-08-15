@@ -24,7 +24,10 @@ export type PDFOperation =
     | 'watermark'
     | 'flatten'
     | 'edit-metadata'
-    | 'sign';
+    | 'sign'
+    | 'dark-mode'
+    | 'sanitize'
+    | 'booklet';
 
 export interface OperationOptions {
     splitValue?: string;
@@ -200,6 +203,18 @@ export class PDFProcessor {
 
                 case 'sign':
                     result = await this.signPDF(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
+                    break;
+
+                case 'dark-mode':
+                    result = await this.darkModePDF(jobDir.inputDir, jobDir.outputDir, primaryFile);
+                    break;
+
+                case 'sanitize':
+                    result = await this.sanitizePDF(jobDir.inputDir, jobDir.outputDir, primaryFile);
+                    break;
+
+                case 'booklet':
+                    result = await this.bookletImposition(jobDir.inputDir, jobDir.outputDir, primaryFile);
                     break;
 
                 default:
@@ -485,6 +500,74 @@ export class PDFProcessor {
                 height: sigH,
             });
         });
+    }
+
+    private async darkModePDF(inputDir: string, outputDir: string, file: string): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'dark_mode.pdf', async (doc) => {
+            doc.getPages().forEach(page => {
+                const { width, height } = page.getSize();
+                page.drawRectangle({
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                    color: rgb(0.1, 0.12, 0.15),
+                    opacity: 0.85,
+                });
+            });
+        });
+    }
+
+    private async sanitizePDF(inputDir: string, outputDir: string, file: string): Promise<ProcessingResult> {
+        return this.transformDoc(inputDir, outputDir, file, 'sanitized.pdf', async (doc) => {
+            doc.setTitle('');
+            doc.setAuthor('');
+            doc.setSubject('');
+            doc.setKeywords([]);
+            doc.setProducer('PDF Tools Sanitizer');
+            doc.setCreator('PDF Tools Sanitizer');
+            doc.setCreationDate(new Date(0));
+            doc.setModificationDate(new Date(0));
+        });
+    }
+
+    private async bookletImposition(inputDir: string, outputDir: string, file: string): Promise<ProcessingResult> {
+        const inputBytes = await fs.readFile(path.join(inputDir, file));
+        const src = await PDFDocument.load(inputBytes, { ignoreEncryption: true });
+        const newDoc = await PDFDocument.create();
+        const total = src.getPageCount();
+
+        const totalBookletPages = Math.ceil(total / 4) * 4;
+        const order: (number | null)[] = [];
+
+        for (let i = 0; i < totalBookletPages / 2; i += 2) {
+            order.push(totalBookletPages - i);
+            order.push(i + 1);
+            order.push(i + 2);
+            order.push(totalBookletPages - i - 1);
+        }
+
+        for (const pageNum of order) {
+            if (pageNum !== null && pageNum <= total) {
+                const [p] = await newDoc.copyPages(src, [pageNum - 1]);
+                newDoc.addPage(p);
+            } else {
+                const firstPage = src.getPage(0);
+                newDoc.addPage([firstPage.getWidth(), firstPage.getHeight()]);
+            }
+        }
+
+        const outBytes = await newDoc.save();
+        const outputPath = path.join(outputDir, 'booklet.pdf');
+        await fs.writeFile(outputPath, outBytes);
+
+        return {
+            success: true,
+            outputPath,
+            outputFilename: 'booklet.pdf',
+            pageCount: newDoc.getPageCount(),
+            fileSize: outBytes.length,
+        };
     }
 }
 

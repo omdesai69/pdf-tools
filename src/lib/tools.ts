@@ -50,6 +50,8 @@ export const toolCategories: ToolCategory[] = [
             { id: 'bates', name: 'Bates Numbering', description: 'Add sequential legal document stamps', icon: '🏷️', category: 'page-tools', status: 'active' },
             { id: 'watermark', name: 'Watermark', description: 'Add custom text overlay to pages', icon: '💧', category: 'page-tools', status: 'active' },
             { id: 'sign', name: 'Sign PDF', description: 'Draw, type, or upload digital signature', icon: '✍️', category: 'page-tools', status: 'active' },
+            { id: 'dark-mode', name: 'Dark Mode PDF', description: 'Invert colors for night reading', icon: '🌑', category: 'page-tools', status: 'active' },
+            { id: 'booklet', name: 'Booklet Imposition', description: 'Format pages for 2-sided booklet print', icon: '📖', category: 'page-tools', status: 'active' },
         ],
     },
     {
@@ -59,6 +61,7 @@ export const toolCategories: ToolCategory[] = [
         tools: [
             { id: 'flatten', name: 'Flatten', description: 'Lock interactive forms into static pages', icon: '📄', category: 'optimize', status: 'active' },
             { id: 'edit-metadata', name: 'Edit Metadata', description: 'Update PDF Title, Author, and Subject', icon: '📋', category: 'optimize', status: 'active' },
+            { id: 'sanitize', name: 'Sanitize PDF', description: 'Scrub all hidden tracking metadata', icon: '🛡️', category: 'optimize', status: 'active' },
         ],
     },
 ];

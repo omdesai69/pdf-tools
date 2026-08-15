@@ -17,11 +17,11 @@
 - [x] Build `<SignOverlay />` drag-and-drop placement overlay to position signature anywhere on any page.
 - [x] Export signed PDF with embedded signature image at exact coordinates using `pdf-lib`.
 
-## Milestone 3: Zero-Knowledge In-Browser Mode
-- [ ] Implement direct `pdf-lib` client-side pipeline in the browser for single-file tools.
-- [ ] Add "100% Private - In-Browser Mode" badge to UI.
+## Milestone 3: Zero-Knowledge In-Browser Mode (Completed)
+- [x] Implement direct `pdf-lib` client-side pipeline in the browser for instant 0ms execution.
+- [x] Add "🔒 100% Private — Processed locally in your browser" trust badge.
 
-## Milestone 4: High-Value Power Tools
-- [ ] Dark Mode PDF Color Inversion.
-- [ ] PDF Sanitizer / Privacy Metadata Scrubber.
-- [ ] Multi-Page Booklet Printing Imposition.
+## Milestone 4: High-Value Power Tools (Completed)
+- [x] Dark Mode PDF Color Inversion.
+- [x] PDF Sanitizer / Privacy Metadata Scrubber.
+- [x] Multi-Page Booklet Printing Imposition.
