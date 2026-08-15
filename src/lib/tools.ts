@@ -49,6 +49,7 @@ export const toolCategories: ToolCategory[] = [
             { id: 'page-numbers', name: 'Page Numbers', description: 'Insert page numbering into footers', icon: '🔢', category: 'page-tools', status: 'active' },
             { id: 'bates', name: 'Bates Numbering', description: 'Add sequential legal document stamps', icon: '🏷️', category: 'page-tools', status: 'active' },
             { id: 'watermark', name: 'Watermark', description: 'Add custom text overlay to pages', icon: '💧', category: 'page-tools', status: 'active' },
+            { id: 'sign', name: 'Sign PDF', description: 'Draw, type, or upload digital signature', icon: '✍️', category: 'page-tools', status: 'active' },
         ],
     },
     {

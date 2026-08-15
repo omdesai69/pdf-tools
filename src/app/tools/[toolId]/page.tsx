@@ -12,6 +12,7 @@ import {
     formatFileSize
 } from '@/lib/storage';
 import { VisualPageGrid } from '@/components/VisualPageGrid';
+import { SignOverlay } from '@/components/SignOverlay';
 import styles from './page.module.css';
 
 type Stage = 'upload' | 'settings' | 'processing' | 'complete' | 'error';
@@ -56,6 +57,20 @@ export default function ToolPage() {
             setSettings(prev => ({ ...prev, splitValue: state.pageOrder.join(', ') }));
         }
     }, [toolId]);
+
+    const handleSignatureChange = useCallback((sigData: {
+        signatureDataUrl: string;
+        signaturePage: number;
+        signatureX: number;
+        signatureY: number;
+        signatureWidth: number;
+        signatureHeight: number;
+    }) => {
+        setSettings(prev => ({
+            ...prev,
+            ...sigData,
+        }));
+    }, []);
 
     // Handle unmounting safely for polling loops
     const mounted = useRef(true);
@@ -562,13 +577,20 @@ export default function ToolPage() {
                             </div>
                         )}
 
-                        {/* Interactive Visual Page Studio for PDF documents */}
+                        {/* Interactive Sign Overlay or Visual Page Studio */}
                         {files.length === 1 && (files[0].type === 'application/pdf' || files[0].name.toLowerCase().endsWith('.pdf')) && (
-                            <VisualPageGrid 
-                                file={files[0]} 
-                                toolId={toolId} 
-                                onChange={handleVisualGridChange} 
-                            />
+                            toolId === 'sign' ? (
+                                <SignOverlay 
+                                    file={files[0]} 
+                                    onChange={handleSignatureChange} 
+                                />
+                            ) : (
+                                <VisualPageGrid 
+                                    file={files[0]} 
+                                    toolId={toolId} 
+                                    onChange={handleVisualGridChange} 
+                                />
+                            )
                         )}
 
                         <div className={styles.settingsActions}>

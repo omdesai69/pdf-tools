@@ -23,7 +23,8 @@ export type PDFOperation =
     | 'bates'
     | 'watermark'
     | 'flatten'
-    | 'edit-metadata';
+    | 'edit-metadata'
+    | 'sign';
 
 export interface OperationOptions {
     splitValue?: string;
@@ -195,6 +196,10 @@ export class PDFProcessor {
 
                 case 'edit-metadata':
                     result = await this.editMetadata(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
+                    break;
+
+                case 'sign':
+                    result = await this.signPDF(jobDir.inputDir, jobDir.outputDir, primaryFile, options);
                     break;
 
                 default:
@@ -447,6 +452,38 @@ export class PDFProcessor {
             if (options.author) doc.setAuthor(options.author);
             if (options.subject) doc.setSubject(options.subject);
             if (options.keywords) doc.setKeywords(options.keywords.split(',').map(k => k.trim()));
+        });
+    }
+
+    private async signPDF(inputDir: string, outputDir: string, file: string, options: OperationOptions): Promise<ProcessingResult> {
+        if (!options.signatureDataUrl) {
+            return { success: false, error: 'No signature provided' };
+        }
+
+        return this.transformDoc(inputDir, outputDir, file, 'signed.pdf', async (doc) => {
+            const pageNum = parseInt(String(options.signaturePage || 1), 10);
+            const total = doc.getPageCount();
+            if (pageNum < 1 || pageNum > total) return;
+
+            const page = doc.getPage(pageNum - 1);
+            const { width, height } = page.getSize();
+
+            // Decode base64 PNG
+            const base64Data = options.signatureDataUrl.replace(/^data:image\/\w+;base64,/, '');
+            const imgBytes = Buffer.from(base64Data, 'base64');
+            const embeddedImg = await doc.embedPng(imgBytes);
+
+            const sigW = (Number(options.signatureWidth) || 0.25) * width;
+            const sigH = (Number(options.signatureHeight) || 0.12) * height;
+            const sigX = (Number(options.signatureX) || 0.1) * width;
+            const sigY = (Number(options.signatureY) || 0.1) * height;
+
+            page.drawImage(embeddedImg, {
+                x: Math.max(0, Math.min(width - sigW, sigX)),
+                y: Math.max(0, Math.min(height - sigH, sigY)),
+                width: sigW,
+                height: sigH,
+            });
         });
     }
 }

@@ -27,6 +27,14 @@ export interface ToolSettings {
 
     // Alternate & Mix
     pageOrder?: 'sequential' | 'interleaved';
+
+    // Signature
+    signatureDataUrl?: string;
+    signaturePage?: number;
+    signatureX?: number;
+    signatureY?: number;
+    signatureWidth?: number;
+    signatureHeight?: number;
 }
 
 export interface SettingsField {
@@ -261,6 +269,13 @@ export const toolConfigs: Record<string, ToolConfig> = {
                 default: '',
             },
         ],
+    },
+    sign: {
+        id: 'sign',
+        name: 'Sign PDF',
+        description: 'Draw, type, or upload digital signature',
+        icon: '✍️',
+        hasSettings: true,
     },
 };
 
