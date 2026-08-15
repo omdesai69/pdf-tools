@@ -133,7 +133,26 @@ export function validateFileType(
     file: File,
     acceptedTypes: string[] = ['application/pdf']
 ): { valid: boolean; message?: string } {
-    if (!acceptedTypes.includes(file.type)) {
+    const fileType = file.type?.toLowerCase() || '';
+    const ext = file.name?.split('.').pop()?.toLowerCase() || '';
+
+    // Check MIME type match
+    const mimeMatches = acceptedTypes.some(t => {
+        if (!fileType) return false;
+        if (t === fileType) return true;
+        if (t === 'image/jpeg' && (fileType === 'image/jpg' || fileType === 'image/pjpeg')) return true;
+        if (t === 'image/png' && fileType === 'image/x-png') return true;
+        return false;
+    });
+
+    // Check extension match fallback (especially critical on Windows where MIME may be empty or varied)
+    const extMatches = acceptedTypes.some(t => {
+        if (t === 'application/pdf' && ext === 'pdf') return true;
+        if (t.startsWith('image/') && ['jpg', 'jpeg', 'png', 'webp', 'jfif'].includes(ext)) return true;
+        return false;
+    });
+
+    if (!mimeMatches && !extMatches) {
         // Dynamic error message based on accepted types
         const isImageType = acceptedTypes.some(t => t.startsWith('image/'));
         const isPdfType = acceptedTypes.includes('application/pdf');

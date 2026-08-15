@@ -140,7 +140,7 @@ export class JobStateMachine {
             return { success: false, error: 'JOB_NOT_FOUND' };
         }
 
-        const validNextStates = VALID_TRANSITIONS[currentDoc.state];
+        const validNextStates = VALID_TRANSITIONS[currentDoc.state as JobState] || [];
 
         if (!validNextStates.includes(newState)) {
             return {
@@ -250,7 +250,7 @@ export class JobStateMachine {
             state: { $ne: 'deleted' }
         }).toArray();
 
-        return docs.map(doc => doc.jobId);
+        return docs.map((doc: JobDocument) => doc.jobId);
     }
 
     /**
@@ -260,7 +260,7 @@ export class JobStateMachine {
         const collection = await getJobsCollection();
 
         const docs = await collection.find({ state }).toArray();
-        return docs.map(doc => docToMetadata(toJobMetadata(doc) as JobDocument));
+        return docs.map((doc: JobDocument) => docToMetadata(toJobMetadata(doc) as JobDocument));
     }
 
     /**

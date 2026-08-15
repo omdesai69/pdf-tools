@@ -45,7 +45,7 @@ export async function getJobsCollection(): Promise<Collection<JobDocument>> {
 /**
  * Convert MongoDB document to JobMetadata format
  */
-export function toJobMetadata(doc: WithId<JobDocument> | null): JobDocument | null {
+export function toJobMetadata(doc: WithId<JobDocument> | JobDocument | null): JobDocument | null {
     if (!doc) return null;
     // Remove MongoDB _id and return clean object
     const { _id, ...job } = doc;

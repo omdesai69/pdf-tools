@@ -709,13 +709,22 @@ export class PDFProcessor {
 
             let image;
             try {
-                if (ext === '.jpg' || ext === '.jpeg') {
+                if (ext === '.jpg' || ext === '.jpeg' || ext === '.jfif') {
                     image = await pdf.embedJpg(imageBytes);
                 } else if (ext === '.png') {
                     image = await pdf.embedPng(imageBytes);
                 } else {
-                    // Skip unsupported formats
-                    continue;
+                    // Try embedding as JPG first, then PNG as fallback
+                    try {
+                        image = await pdf.embedJpg(imageBytes);
+                    } catch {
+                        try {
+                            image = await pdf.embedPng(imageBytes);
+                        } catch {
+                            console.error(`Skipping unsupported image format for ${file}`);
+                            continue;
+                        }
+                    }
                 }
 
                 // Create page with image dimensions

@@ -36,10 +36,14 @@ export async function getMongoClient(): Promise<MongoClient> {
             maxPoolSize: 10,
             minPoolSize: 1,
             maxIdleTimeMS: 60000,
-        }).then((client) => {
+        }).then((client: MongoClient) => {
             globalCache.client = client;
             console.log('MongoDB connected successfully');
             return client;
+        }).catch((err: Error) => {
+            globalCache.client = null;
+            globalCache.promise = null;
+            throw err;
         });
     }
 
@@ -52,8 +56,13 @@ export async function getMongoClient(): Promise<MongoClient> {
 export async function getDatabase(): Promise<Db> {
     const client = await getMongoClient();
     // Extract database name from URI or use default
-    const dbName = new URL(MONGODB_URI).pathname.slice(1) || 'pdf-tools';
-    return client.db(dbName);
+    try {
+        const url = new URL(MONGODB_URI);
+        const dbName = url.pathname.slice(1).split('?')[0] || 'pdf-tools';
+        return client.db(dbName);
+    } catch {
+        return client.db('pdf-tools');
+    }
 }
 
 /**
